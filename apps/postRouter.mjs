@@ -166,7 +166,7 @@ postRouter.delete("/:id", async (req, res) => {
   }
 });
 
-app.get("/posts", async (req, res) => {
+postRouter.get("/posts", async (req, res) => {
   // ลอจิกในอ่านข้อมูลโพสต์ทั้งหมดในระบบ
   try {
     // 1) Access ข้อมูลใน Body จาก Request ด้วย req.body
