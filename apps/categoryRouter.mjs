@@ -1,6 +1,6 @@
 import express from "express";
 import connectionPool from "../utils/db.mjs";
-import protectAdmin from "../middleware/protectAdmin.mjs";
+import protectAdmin from "../middlewares/protectAdmin.mjs";
 
 const categoryRouter = express.Router();
 
