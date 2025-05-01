@@ -1,6 +1,7 @@
 import { Router } from "express";
 import connectionPool from "../utils/db.mjs";
 import { createClient } from "@supabase/supabase-js";
+import validatePostData from "../middlewares/postValidations.mjs";
 
 // Optional: Setup Supabase if you plan to use it for file uploads in the future
 const supabase = createClient(
@@ -10,39 +11,14 @@ const supabase = createClient(
 
 const postRouter = Router();
 
-postRouter.post("/", async (req, res) => {
+postRouter.post("/", validatePostData, async (req, res) => {
   const newPost = req.body;
-
-  // Helper: check for null, undefined, or empty string (trimmed)
-  const isInvalid = (value) =>
-    value === undefined ||
-    value === null ||
-    (typeof value === "string" && value.trim() === "");
 
   try {
     const query = `
       INSERT INTO posts (title, image, category_id, description, content, status_id)
       VALUES ($1, $2, $3, $4, $5, $6)
     `;
-
-    if (isInvalid(newPost.title)) {
-      return res.status(400).json({ message: "Title is required" });
-    }
-    if (isInvalid(newPost.image)) {
-      return res.status(400).json({ message: "Image is required" });
-    }
-    if (isInvalid(newPost.category_id)) {
-      return res.status(400).json({ message: "Category ID is required" });
-    }
-    if (isInvalid(newPost.description)) {
-      return res.status(400).json({ message: "Description is required" });
-    }
-    if (isInvalid(newPost.content)) {
-      return res.status(400).json({ message: "Content is required" });
-    }
-    if (isInvalid(newPost.status_id)) {
-      return res.status(400).json({ message: "Status ID is required" });
-    }
 
     const values = [
       newPost.title,
@@ -97,8 +73,16 @@ postRouter.patch("/:id", async (req, res) => {
   const values = [];
   let index = 1;
 
-  for (const key in updatePatch) {
-    if (updatePatch[key] !== undefined) {
+  const allowedKeys = [
+    "title",
+    "image",
+    "category_id",
+    "description",
+    "content",
+    "status_id",
+  ];
+  for (const key of Object.keys(updatePatch)) {
+    if (allowedKeys.includes(key) && updatePatch[key] !== undefined) {
       fields.push(`${key} = $${index}`);
       values.push(updatePatch[key]);
       index++;
@@ -167,105 +151,110 @@ postRouter.delete("/:id", async (req, res) => {
 });
 
 postRouter.get("/", async (req, res) => {
-    try {
-      const category = req.query.category || "";
-      const keyword = req.query.keyword || "";
-      const page = Number(req.query.page) || 1;
-      const limit = Number(req.query.limit) || 6;
-  
-      const safePage = Math.max(1, page);
-      const safeLimit = Math.max(1, Math.min(100, limit));
-      const offset = (safePage - 1) * safeLimit;
-  
-      // 1. Prepare main query
-      let query = `
+  try {
+    const category = req.query.category || "";
+    const keyword = req.query.keyword || "";
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 6;
+
+    const safePage = Math.max(1, page);
+    const safeLimit = Math.max(1, Math.min(100, limit));
+    const offset = (safePage - 1) * safeLimit;
+
+    // 1. Prepare main query
+    let query = `
         SELECT posts.id, posts.image, categories.name AS category, posts.title,
                posts.description, posts.date, posts.content, statuses.status, posts.likes_count
         FROM posts
         INNER JOIN categories ON posts.category_id = categories.id
         INNER JOIN statuses ON posts.status_id = statuses.id
       `;
-  
-      let values = [];
-      let filterConditions = [];
-  
-      if (category) {
-        values.push(`%${category}%`);
-        filterConditions.push(`categories.name ILIKE $${values.length}`);
-      }
-  
-      if (keyword) {
-        values.push(`%${keyword}%`);
-        const keywordIndex = values.length;
-        filterConditions.push(`(posts.title ILIKE $${keywordIndex} OR posts.description ILIKE $${keywordIndex} OR posts.content ILIKE $${keywordIndex})`);
-      }
-  
-      if (filterConditions.length > 0) {
-        query += ` WHERE ` + filterConditions.join(" AND ");
-      }
-  
-      // 2. Add ORDER, LIMIT, OFFSET
-      query += ` ORDER BY posts.date DESC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`;
-      values.push(safeLimit, offset);
-  
-      // 3. Execute main query
-      const result = await connectionPool.query(query, values);
-  
-      // 4. Count query for pagination metadata
-      let countQuery = `
+
+    let values = [];
+    let filterConditions = [];
+
+    if (category) {
+      values.push(`%${category}%`);
+      filterConditions.push(`categories.name ILIKE $${values.length}`);
+    }
+
+    if (keyword) {
+      values.push(`%${keyword}%`);
+      const keywordIndex = values.length;
+      filterConditions.push(
+        `(posts.title ILIKE $${keywordIndex} OR posts.description ILIKE $${keywordIndex} OR posts.content ILIKE $${keywordIndex})`
+      );
+    }
+
+    if (filterConditions.length > 0) {
+      query += ` WHERE ` + filterConditions.join(" AND ");
+    }
+
+    // 2. Add ORDER, LIMIT, OFFSET
+    query += ` ORDER BY posts.date DESC LIMIT $${values.length + 1} OFFSET $${
+      values.length + 2
+    }`;
+    values.push(safeLimit, offset);
+
+    // 3. Execute main query
+    const result = await connectionPool.query(query, values);
+
+    // 4. Count query for pagination metadata
+    let countQuery = `
         SELECT COUNT(*)
         FROM posts
         INNER JOIN categories ON posts.category_id = categories.id
         INNER JOIN statuses ON posts.status_id = statuses.id
       `;
-  
-      let countValues = [];
-      let countConditions = [];
-  
-      if (category) {
-        countValues.push(`%${category}%`);
-        countConditions.push(`categories.name ILIKE $${countValues.length}`);
-      }
-  
-      if (keyword) {
-        countValues.push(`%${keyword}%`);
-        const keywordIndex = countValues.length;
-        countConditions.push(`(posts.title ILIKE $${keywordIndex} OR posts.description ILIKE $${keywordIndex} OR posts.content ILIKE $${keywordIndex})`);
-      }
-  
-      if (countConditions.length > 0) {
-        countQuery += ` WHERE ` + countConditions.join(" AND ");
-      }
-  
-      const countResult = await connectionPool.query(countQuery, countValues);
-      const totalPosts = parseInt(countResult.rows[0].count, 10);
-  
-      // 5. Prepare pagination response
-      const results = {
-        totalPosts,
-        totalPages: Math.ceil(totalPosts / safeLimit),
-        currentPage: safePage,
-        limit: safeLimit,
-        posts: result.rows,
-      };
-  
-      if (offset + safeLimit < totalPosts) {
-        results.nextPage = safePage + 1;
-      }
-  
-      if (offset > 0) {
-        results.previousPage = safePage - 1;
-      }
-  
-      return res.status(200).json(results);
-    } catch (err) {
-      console.error("Error fetching posts:", err);
-      return res.status(500).json({
-        message: "Server could not read post because database issue",
-        error: err.message,
-      });
+
+    let countValues = [];
+    let countConditions = [];
+
+    if (category) {
+      countValues.push(`%${category}%`);
+      countConditions.push(`categories.name ILIKE $${countValues.length}`);
     }
-  });
-  
+
+    if (keyword) {
+      countValues.push(`%${keyword}%`);
+      const keywordIndex = countValues.length;
+      countConditions.push(
+        `(posts.title ILIKE $${keywordIndex} OR posts.description ILIKE $${keywordIndex} OR posts.content ILIKE $${keywordIndex})`
+      );
+    }
+
+    if (countConditions.length > 0) {
+      countQuery += ` WHERE ` + countConditions.join(" AND ");
+    }
+
+    const countResult = await connectionPool.query(countQuery, countValues);
+    const totalPosts = parseInt(countResult.rows[0].count, 10);
+
+    // 5. Prepare pagination response
+    const results = {
+      totalPosts,
+      totalPages: Math.ceil(totalPosts / safeLimit),
+      currentPage: safePage,
+      limit: safeLimit,
+      posts: result.rows,
+    };
+
+    if (offset + safeLimit < totalPosts) {
+      results.nextPage = safePage + 1;
+    }
+
+    if (offset > 0) {
+      results.previousPage = safePage - 1;
+    }
+
+    return res.status(200).json(results);
+  } catch (err) {
+    console.error("Error fetching posts:", err);
+    return res.status(500).json({
+      message: "Server could not read post because database issue",
+      error: err.message,
+    });
+  }
+});
 
 export default postRouter;
