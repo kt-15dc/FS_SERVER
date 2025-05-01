@@ -156,6 +156,7 @@ postRouter.get("/", async (req, res) => {
     const keyword = req.query.keyword || "";
     const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 6;
+    const status = req.query.status || "";
 
     const safePage = Math.max(1, page);
     const safeLimit = Math.max(1, Math.min(100, limit));
@@ -184,6 +185,11 @@ postRouter.get("/", async (req, res) => {
       filterConditions.push(
         `(posts.title ILIKE $${keywordIndex} OR posts.description ILIKE $${keywordIndex} OR posts.content ILIKE $${keywordIndex})`
       );
+    }
+
+    if (status) {
+      values.push(status);
+      filterConditions.push(`statuses.status = $${values.length}`);
     }
 
     if (filterConditions.length > 0) {
@@ -221,6 +227,11 @@ postRouter.get("/", async (req, res) => {
       countConditions.push(
         `(posts.title ILIKE $${keywordIndex} OR posts.description ILIKE $${keywordIndex} OR posts.content ILIKE $${keywordIndex})`
       );
+    }
+
+    if (status) {
+      countValues.push(status);
+      countConditions.push(`statuses.status = $${countValues.length}`);
     }
 
     if (countConditions.length > 0) {
